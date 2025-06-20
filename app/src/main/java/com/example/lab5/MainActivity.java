@@ -18,6 +18,10 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,11 +33,14 @@ public class MainActivity extends AppCompatActivity {
     ListView listViewProducts;
 
     List<Product> products;
+    DatabaseReference dbRef;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        FirebaseDatabase database = FirebaseDatabase.getInstance();
+        dbRef = database.getReference("products");
 
         editTextName = (EditText) findViewById(R.id.editTextName);
         editTextPrice = (EditText) findViewById(R.id.editTextPrice);
@@ -50,20 +57,42 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        listViewProducts.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+        listViewProducts.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
-            public boolean onItemLongClick(AdapterView<?> adapterView, View view, int i, long l) {
+            public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
+                Toast.makeText(MainActivity.this, "Item clicked", Toast.LENGTH_SHORT).show();  // ✅ Debug line
                 Product product = products.get(i);
                 showUpdateDeleteDialog(product.getId(), product.getProductName());
-                return true;
             }
         });
+
+
     }
 
 
     @Override
     protected void onStart() {
         super.onStart();
+
+        dbRef.addValueEventListener(new com.google.firebase.database.ValueEventListener() {
+            @Override
+            public void onDataChange(com.google.firebase.database.DataSnapshot dataSnapshot) {
+                products.clear();  // Clear the list to prevent duplicates
+
+                for (com.google.firebase.database.DataSnapshot postSnapshot : dataSnapshot.getChildren()) {
+                    Product product = postSnapshot.getValue(Product.class);
+                    products.add(product);
+                }
+
+                ProductList adapter = new ProductList(MainActivity.this, products);
+                listViewProducts.setAdapter(adapter);
+            }
+
+            @Override
+            public void onCancelled(com.google.firebase.database.DatabaseError databaseError) {
+                Toast.makeText(MainActivity.this, "Failed to load products", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
 
@@ -78,6 +107,15 @@ public class MainActivity extends AppCompatActivity {
         final EditText editTextPrice  = (EditText) dialogView.findViewById(R.id.editTextPrice);
         final Button buttonUpdate = (Button) dialogView.findViewById(R.id.buttonUpdateProduct);
         final Button buttonDelete = (Button) dialogView.findViewById(R.id.buttonDeleteProduct);
+
+        Product currentProduct = findProductById(productId);
+        if (currentProduct != null) {
+            editTextName.setText(productName);
+            editTextPrice.setText(String.valueOf(currentProduct.getPrice()));
+        }
+
+
+
 
         dialogBuilder.setTitle(productName);
         final AlertDialog b = dialogBuilder.create();
@@ -105,17 +143,40 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateProduct(String id, String name, double price) {
-
-        Toast.makeText(getApplicationContext(), "NOT IMPLEMENTED YET", Toast.LENGTH_LONG).show();
+        Product product = new Product(id, name, price);
+        dbRef.child(id).setValue(product);
+        Toast.makeText(getApplicationContext(), "Product updated", Toast.LENGTH_LONG).show();
     }
 
     private void deleteProduct(String id) {
-
-        Toast.makeText(getApplicationContext(), "NOT IMPLEMENTED YET", Toast.LENGTH_LONG).show();
+        dbRef.child(id).removeValue();
+        Toast.makeText(getApplicationContext(), "Product deleted", Toast.LENGTH_LONG).show();
     }
 
     private void addProduct() {
+        String name = editTextName.getText().toString().trim();
+        String priceText = editTextPrice.getText().toString().trim();
 
-        Toast.makeText(this, "NOT IMPLEMENTED YET", Toast.LENGTH_LONG).show();
+        if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(priceText)) {
+            double price = Double.parseDouble(priceText);
+            String id = dbRef.push().getKey(); // unique product ID
+            Product product = new Product(id, name, price);
+            dbRef.child(id).setValue(product);
+
+            Toast.makeText(this, "Product added", Toast.LENGTH_SHORT).show();
+            editTextName.setText("");
+            editTextPrice.setText("");
+        } else {
+            Toast.makeText(this, "Please enter a name and price", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private Product findProductById(String id) {
+        for (Product p : products) {
+            if (p.getId().equals(id)) {
+                return p;
+            }
+        }
+        return null;
     }
 }
